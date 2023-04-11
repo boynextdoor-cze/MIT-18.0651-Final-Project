@@ -56,6 +56,8 @@ class ImageNetDataset(Dataset):
         if self.transform is not None:
             sample = self.transform(sample)
 
+        sample.requires_grad = True
+
         target = torch.randint(1000, size=label.size())
         while target == label:
             target = torch.randint(1000, size=label.size())
