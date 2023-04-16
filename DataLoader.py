@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 from attack import fgsm
+import cv2
 
 PROJ_DIR = os.getcwd()
 TRAIN_VAL_PATH = os.path.join(PROJ_DIR, 'data', 'train_val')
@@ -50,20 +51,21 @@ class ImageNetDataset(Dataset):
         path = self.img_path[index]
         label = self.labels[index]
 
-        with open(path, 'rb') as f:
-            sample = Image.open(f).convert('RGB')
+        # with open(path, 'rb') as f:
+        sample = cv2.imread(path)
 
         if self.transform is not None:
             sample = self.transform(sample)
 
-        sample.requires_grad = True
+        # sample.requires_grad = True
 
-        target = torch.randint(1000, size=label.size())
-        while target == label:
-            target = torch.randint(1000, size=label.size())
-        attack = fgsm(sample, target, epsilon=0.1)
+        # target = torch.randint(1000, size=label.size())
+        # while target == label:
+        #     target = torch.randint(1000, size=label.size())
+        # attack = fgsm(sample, target, epsilon=0.1)
 
-        return sample, attack, label, target
+        # return sample, attack, label, target
+        return sample, label
 
 
 def load_data(split, batch_size=64, num_workers=4, shuffle=True):
