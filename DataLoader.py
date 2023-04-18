@@ -16,76 +16,65 @@ TEST_IMG_DIR = os.path.join(TEST_PATH, 'test')
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
-
-def get_data_transform(split):
-    if split == 'train':
-        return transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ])
-    else:
-        return transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])
-
-
 class ImageNetDataset(Dataset):
     def __init__(self, root, txt, transform=None):
         self.img_path = []
         self.labels = []
         self.transform = transform
+        self.attack_path = TEST_IMG_DIR
         with open(txt) as f:
             for line in f:
-                self.img_path.append(os.path.join(root, line.split()[0]))
+                attack_img = os.path.join(self.attack_path, line.split()[0][:-4] + 'png')
+                self.img_path.append({'origin': os.path.join(root, line.split()[0]), 'attack': attack_img})
                 self.labels.append(int(line.split()[1]))
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, index):
-        path = self.img_path[index]
+        origin_path = self.img_path[index]['origin']
+        attack_path = self.img_path[index]['attack']
         label = self.labels[index]
 
-        # with open(path, 'rb') as f:
-        sample = cv2.imread(path)
-
         if self.transform is not None:
-            sample = self.transform(sample)
+            with open(origin_path, 'rb') as f:
+                sample = Image.open(f).convert('RGB')
+                sample = self.transform(sample)
+            with open(attack_path, 'rb') as f:
+                attack = Image.open(f).convert('RGB')
+                attack = self.transform(attack)
+        else:
+            sample = cv2.imread(origin_path)
+            sample = cv2.resize(sample, (224, 224))
+            sample = sample[:, :, ::-1].copy()
+            sample = transforms.functional.to_tensor(sample)
 
-        # sample.requires_grad = True
+            attack = cv2.imread(attack_path)
+            attack = cv2.resize(attack, (224, 224))
+            attack = attack[:, :, ::-1].copy()
+            attack = transforms.functional.to_tensor(attack)
 
-        # target = torch.randint(1000, size=label.size())
-        # while target == label:
-        #     target = torch.randint(1000, size=label.size())
-        # attack = fgsm(sample, target, epsilon=0.1)
-
-        # return sample, attack, label, target
-        return sample, label
+        return sample, label, attack
 
 
-def load_data(split, batch_size=64, num_workers=4, shuffle=True):
-    txt = './data/{}/{}.txt'.format('train_val' if split ==
-                                    'train' or split == 'val' else 'DAmageNet', split)
+def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=True):
+    txt = './data/train_val/{}.txt'.format(split)
 
     print('Loading data from %s' % (txt))
 
-    transform = get_data_transform(split)
-
-    print('Use data transformation:', transform)
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        normalize,
+    ])
 
     if split == 'train':
         data_root = TRAIN_IMG_DIR
     elif split == 'val':
         data_root = VAL_IMG_DIR
-    else:
-        data_root = TEST_IMG_DIR
 
-    dataset = ImageNetDataset(data_root, txt, transform)
+    dataset = ImageNetDataset(data_root, txt, transform if apply_trans else None)
     print('Length of {} set is: {}'.format(split, len(dataset)))
 
     return DataLoader(dataset=dataset, batch_size=batch_size,
