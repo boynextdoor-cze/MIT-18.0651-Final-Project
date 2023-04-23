@@ -6,7 +6,7 @@ from PIL import Image
 from attack import fgsm
 import cv2
 
-PROJ_DIR = os.getcwd()
+PROJ_DIR = '/data/vision/polina/projects/wmh/inr-atlas/zongxc/matrix/MIT-18.0651-Final-Project'
 TRAIN_VAL_PATH = os.path.join(PROJ_DIR, 'data', 'train_val')
 TEST_PATH = os.path.join(PROJ_DIR, 'data', 'DAmageNet')
 TRAIN_IMG_DIR = os.path.join(TRAIN_VAL_PATH, 'train')
@@ -58,7 +58,7 @@ class ImageNetDataset(Dataset):
 
 
 def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=True):
-    txt = './data/train_val/{}.txt'.format(split)
+    txt = '/data/vision/polina/projects/wmh/inr-atlas/zongxc/matrix/MIT-18.0651-Final-Project/data/train_val/{}.txt'.format(split)
 
     print('Loading data from %s' % (txt))
 
@@ -73,6 +73,8 @@ def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=Tru
         data_root = TRAIN_IMG_DIR
     elif split == 'val':
         data_root = VAL_IMG_DIR
+    elif split == 'test':
+        data_root = TRAIN_IMG_DIR
 
     dataset = ImageNetDataset(data_root, txt, transform if apply_trans else None)
     print('Length of {} set is: {}'.format(split, len(dataset)))
