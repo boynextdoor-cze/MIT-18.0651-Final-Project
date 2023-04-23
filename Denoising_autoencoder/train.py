@@ -1,3 +1,4 @@
+from data.DataLoader import load_data
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -10,7 +11,6 @@ from matplotlib.pyplot import MultipleLocator
 from model import Autoencoder
 
 sys.path.append("..")
-from DataLoader import load_data
 
 
 if __name__ == '__main__':
