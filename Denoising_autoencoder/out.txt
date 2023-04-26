@@ -1,8 +1,0 @@
-Loading data from /data/vision/polina/projects/wmh/inr-atlas/zongxc/matrix/MIT-18.0651-Final-Project/data/train_val/test.txt
-Length of test set is: 5000
-  0%|          | 0/79 [00:00<?, ?it/s]
-Classifier: resnet18, Attack accuracy: 14.75%
-  0%|          | 0/79 [00:00<?, ?it/s]
-Classifier: resnet50, Attack accuracy: 27.39%
-  0%|          | 0/79 [00:00<?, ?it/s]
-Classifier: resnet101, Attack accuracy: 33.56%
