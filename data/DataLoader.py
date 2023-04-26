@@ -3,25 +3,26 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
-from attack import fgsm
 import cv2
 
-PROJ_DIR = '/data/vision/polina/projects/wmh/inr-atlas/zongxc/matrix/MIT-18.0651-Final-Project'
-TRAIN_VAL_PATH = os.path.join(PROJ_DIR, 'data', 'train_val')
-TEST_PATH = os.path.join(PROJ_DIR, 'data', 'DAmageNet')
-TRAIN_IMG_DIR = os.path.join(TRAIN_VAL_PATH, 'train')
-VAL_IMG_DIR = os.path.join(TRAIN_VAL_PATH, 'val')
-TEST_IMG_DIR = os.path.join(TEST_PATH, 'test')
+PROJ_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGENET_PATH = os.path.join(PROJ_DIR, 'ImageNet')
+DAMAGE_PATH = os.path.join(PROJ_DIR, 'DAmageNet')
+TRAIN_IMG_DIR = os.path.join(IMAGENET_PATH, 'train')
+VAL_IMG_DIR = os.path.join(IMAGENET_PATH, 'val')
+TEST_IMG_DIR = os.path.join(IMAGENET_PATH, 'train')
+DAMAGE_IMG_DIR = os.path.join(DAMAGE_PATH, 'test')
 
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
 class ImageNetDataset(Dataset):
     def __init__(self, root, txt, transform=None):
+        super(ImageNetDataset, self).__init__()
         self.img_path = []
         self.labels = []
         self.transform = transform
-        self.attack_path = TEST_IMG_DIR
+        self.attack_path = DAMAGE_IMG_DIR
         with open(txt) as f:
             for line in f:
                 attack_img = os.path.join(self.attack_path, line.split()[0][:-4] + 'png')
@@ -58,7 +59,7 @@ class ImageNetDataset(Dataset):
 
 
 def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=True):
-    txt = '/data/vision/polina/projects/wmh/inr-atlas/zongxc/matrix/MIT-18.0651-Final-Project/data/train_val/{}.txt'.format(split)
+    txt = os.path.join(PROJ_DIR, 'ImageNet/{}.txt'.format(split))
 
     print('Loading data from %s' % (txt))
 
@@ -74,7 +75,9 @@ def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=Tru
     elif split == 'val':
         data_root = VAL_IMG_DIR
     elif split == 'test':
-        data_root = TRAIN_IMG_DIR
+        data_root = TEST_IMG_DIR
+    else:
+        raise ValueError('Unknown split: {}'.format(split))
 
     dataset = ImageNetDataset(data_root, txt, transform if apply_trans else None)
     print('Length of {} set is: {}'.format(split, len(dataset)))
