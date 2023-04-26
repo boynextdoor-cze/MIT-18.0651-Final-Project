@@ -6,7 +6,6 @@ import tqdm
 import wandb
 import os
 
-from matplotlib.pyplot import MultipleLocator
 from model import Autoencoder
 
 sys.path.append("..")
@@ -15,9 +14,12 @@ from DataLoader import load_data
 
 if __name__ == '__main__':
     os.environ['WANDB_API_KEY'] = open(os.path.expandvars('$NFS/.wandb'), 'r').read().strip()
-    wandb.init(project="Autoencoder", name='autoencoder2',
+    wandb.init(project="Autoencoder", name='autoencoder',
                config=dict(learing_rate=0.01,batch_size=32,epoch=50))
+    
     torch.manual_seed(42)
+    torch.backends.cudnn.benchmark=True
+
     if torch.cuda.is_available():
         device = torch.device("cuda")
         print("Using GPU!")
@@ -30,7 +32,7 @@ if __name__ == '__main__':
 
     net = Autoencoder().to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
-    scheduler_1 = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    scheduler_1 = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
     criterion = nn.MSELoss()
 
     total_train_step = 0
@@ -57,8 +59,14 @@ if __name__ == '__main__':
             # train_losses.append(loss.detach().cpu())
             wandb.log({"training_loss": loss.item(), 'step': training_epoch})
             training_epoch += 1
-            
-        scheduler_1.step()
+        if i==8:
+            scheduler_1.step()
+        if i==10:
+            scheduler_1.step()
+        if i==13:
+            scheduler_1.step()
+        if i>=15:
+            scheduler_1.step()
         # print("the learning rate of the %dth epoch:%f" % (i, optimizer.param_groups[0]['lr']))
 
         # validation
@@ -77,5 +85,4 @@ if __name__ == '__main__':
             val_loss=val_loss/len(val_loader)
             wandb.log({"validation_loss": val_loss.item(), 'step': i})
 
-        if i%10==0:
-            torch.save(net,"epoch_{}.pth".format(i))
+        torch.save(net,"epoch_{}.pth".format(i))
