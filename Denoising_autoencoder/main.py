@@ -7,8 +7,8 @@ import torch.nn as nn
 import sys
 
 sys.path.append("..")
-from DataLoader import load_data
-from utils import Accuracy
+from data.DataLoader import load_data
+from utils import Avg_Metric
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     for classifier in classifiers:
         classifier['model'].eval()
         model.eval()
-        attack = Accuracy()
+        attack = Avg_Metric()
         for i, (sample,labels,attacked_data) in enumerate(tqdm(test_loader)):
             with torch.no_grad():
                 attacked_data,labels= attacked_data.to(device),labels.to(device)

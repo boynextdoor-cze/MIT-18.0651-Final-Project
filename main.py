@@ -16,6 +16,7 @@ from randomize import random_reshape
 cuda_available = torch.cuda.is_available()
 device = torch.device("cuda" if cuda_available else "cpu")
 
+
 def test(args, denoiser, model):
     model.eval()
     denoiser.eval()
@@ -44,7 +45,7 @@ def test(args, denoiser, model):
 
 def train_val(args, denoiser, model):
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=10, gamma=0.5)
 
@@ -52,6 +53,7 @@ def train_val(args, denoiser, model):
     val_loader = load_data('val', batch_size=args.batch_size, shuffle=False)
 
     denoiser.eval()
+    best_acc = 0
     for epoch in range(args.train_epoch):
         model.train()
         train_acc = Avg_Metric()
@@ -70,8 +72,9 @@ def train_val(args, denoiser, model):
             optimizer.zero_grad()
             logits = model(anti_attack)
             # calculate accuracy
-            pred = torch.argmax(logits, dim=1)
-            acc = (pred == labels).sum().item()
+            probs = F.softmax(logits, dim=1)
+            _, pred = torch.max(probs, dim=1)
+            acc = torch.sum(pred == labels).item()
             train_acc.update(acc, len(labels))
             # calculate loss
             loss = criterion(logits, labels)
@@ -79,7 +82,7 @@ def train_val(args, denoiser, model):
             loss.backward()
             optimizer.step()
             wandb.log({'train_loss': train_loss.avg,
-                      'train_acc': train_acc.avg, 'step': (epoch + 1) * (i + 1)})
+                      'train_acc': train_acc.avg * 100, 'step': (epoch + 1) * (i + 1)})
         scheduler.step()
 
         val_acc = Avg_Metric()
@@ -99,13 +102,19 @@ def train_val(args, denoiser, model):
                 labels = labels.to(device)
                 logits = model(anti_attack)
                 # calculate accuracy
-                pred = torch.argmax(logits, dim=1)
-                acc = (pred == labels).sum().item()
+                probs = F.softmax(logits, dim=1)
+                _, pred = torch.max(probs, dim=1)
+                acc = torch.sum(pred == labels).item()
                 val_acc.update(acc, len(labels))
                 # calculate loss
                 loss = criterion(logits, labels)
                 val_loss.update(loss.item(), len(labels))
-            wandb.log({'val_loss': val_loss.avg, 'val_acc': val_acc.avg, 'step': (epoch + 1) * (i + 1)})
+            wandb.log({'val_loss': val_loss.avg, 'val_acc': val_acc.avg *
+                      100, 'step': (epoch + 1) * (i + 1)})
+            if val_acc.avg > best_acc:
+                best_acc = val_acc.avg
+                torch.save(model.state_dict(),
+                           './checkpoints/epoch{}.pth'.format(epoch))
 
 
 def main():
