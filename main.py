@@ -12,9 +12,8 @@ from data.DataLoader import load_data
 from utils import Avg_Metric
 from Denoising_autoencoder.model import Autoencoder
 from randomize import random_reshape
-
-cuda_available = torch.cuda.is_available()
-device = torch.device("cuda" if cuda_available else "cpu")
+from torch.nn.parallel import DistributedDataParallel as DDP
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def test(args, denoiser, model):
@@ -45,9 +44,10 @@ def test(args, denoiser, model):
 
 def train_val(args, denoiser, model):
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=10, gamma=0.5)
+        optimizer, step_size=3, gamma=0.7)
 
     train_loader = load_data('train', batch_size=args.batch_size, shuffle=True)
     val_loader = load_data('val', batch_size=args.batch_size, shuffle=False)
@@ -58,22 +58,14 @@ def train_val(args, denoiser, model):
         model.train()
         train_acc = Avg_Metric()
         train_loss = Avg_Metric()
+        adv_acc = Avg_Metric()
         for i, (data, labels, attack) in enumerate(train_loader):
-            attack = attack.to(device)
-            if args.mode == 'random':
-                anti_attack = random_reshape(attack)
-            elif args.mode == 'denoise':
-                anti_attack = denoiser(attack)
-            elif args.mode == 'None':
-                anti_attack = attack
-            else:
-                raise ValueError('mode error')
-            labels = labels.to(device)
+            data = data.cuda()
+            labels = labels.cuda()
             optimizer.zero_grad()
-            logits = model(anti_attack)
+            logits, _ = model(data)
             # calculate accuracy
-            probs = F.softmax(logits, dim=1)
-            _, pred = torch.max(probs, dim=1)
+            pred = torch.argmax(logits, dim=1)
             acc = torch.sum(pred == labels).item()
             train_acc.update(acc, len(labels))
             # calculate loss
@@ -81,8 +73,22 @@ def train_val(args, denoiser, model):
             train_loss.update(loss.item(), len(labels))
             loss.backward()
             optimizer.step()
+
+            # Adversarial training
+            optimizer.zero_grad()
+            attack = attack.cuda()
+            logits, _ = model(attack)
+            # calculate accuracy
+            pred = torch.argmax(logits, dim=1)
+            acc = torch.sum(pred == labels).item()
+            adv_acc.update(acc, len(labels))
+            # calculate loss
+            loss = criterion(logits, labels)
+            train_loss.update(loss.item(), len(labels))
+            loss.backward()
+            optimizer.step()
             wandb.log({'train_loss': train_loss.avg,
-                      'train_acc': train_acc.avg * 100, 'step': (epoch + 1) * (i + 1)})
+                      'train_acc': train_acc.avg * 100, 'adv_acc': adv_acc.avg * 100, 'step': (epoch + 1) * (i + 1)})
         scheduler.step()
 
         val_acc = Avg_Metric()
@@ -90,17 +96,9 @@ def train_val(args, denoiser, model):
         model.eval()
         with torch.no_grad():
             for i, (data, labels, attack) in enumerate(val_loader):
-                attack = attack.to(device)
-                if args.mode == 'random':
-                    anti_attack = random_reshape(attack)
-                elif args.mode == 'denoise':
-                    anti_attack = denoiser(attack)
-                elif args.mode == 'None':
-                    anti_attack = attack
-                else:
-                    raise ValueError('mode error')
-                labels = labels.to(device)
-                logits = model(anti_attack)
+                attack = attack.cuda()
+                labels = labels.cuda()
+                logits = model(attack)
                 # calculate accuracy
                 probs = F.softmax(logits, dim=1)
                 _, pred = torch.max(probs, dim=1)
@@ -111,10 +109,8 @@ def train_val(args, denoiser, model):
                 val_loss.update(loss.item(), len(labels))
             wandb.log({'val_loss': val_loss.avg, 'val_acc': val_acc.avg *
                       100, 'step': (epoch + 1) * (i + 1)})
-            if val_acc.avg > best_acc:
-                best_acc = val_acc.avg
-                torch.save(model.state_dict(),
-                           './checkpoints/epoch{}.pth'.format(epoch))
+            torch.save(model.state_dict(),
+                       './checkpoints/epoch{}.pth'.format(epoch))
 
 
 def main():
@@ -135,11 +131,12 @@ def main():
     model_bank = {'InceptionV3': models.inception_v3(weights=models.Inception_V3_Weights.DEFAULT), 'ResNet101': models.resnet101(
         weights=models.ResNet101_Weights.DEFAULT), 'ResNet50': models.resnet50(weights=models.ResNet50_Weights.DEFAULT)}
     model = model_bank['ResNet101'].to(device)
+    # model.load_state_dict(torch.load('./checkpoints/resnet101.pth'))
 
     denoiser = Autoencoder().to(device)
     denoiser.load_state_dict(torch.load('./Denoising_autoencoder/epoch25.pth'))
 
-    train_val(args, denoiser, model)
+    test(args, denoiser, model)
 
 
 if __name__ == '__main__':

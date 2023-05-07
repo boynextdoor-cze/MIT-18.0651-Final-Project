@@ -13,7 +13,6 @@ sbatch <<EOT
 #SBATCH -o $NFS/code/matrix/results/$1/out.txt
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=1
-#SBATCH -w zaatar
 
 MKL_THREADING_LAYER=GNU python3 main.py -j $1 -m $2
 exit()
