@@ -14,6 +14,8 @@ def fgsm(x, labels, model, loss, epsilon=0.1):
     :param labels: the id of the target class.
     :return: a tensor for the adversarial example
     """
+    x = x.to(device)
+    labels = labels.to(device)
     x.requires_grad = True
     outputs = model(x)
 

@@ -16,6 +16,7 @@ DAMAGE_IMG_DIR = os.path.join(DAMAGE_PATH, 'test')
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
+
 class ImageNetDataset(Dataset):
     def __init__(self, root, txt, transform=None):
         super(ImageNetDataset, self).__init__()
@@ -26,7 +27,14 @@ class ImageNetDataset(Dataset):
         with open(txt) as f:
             for line in f:
                 attack_img = os.path.join(self.attack_path, line.split()[0][:-4] + 'png')
-                self.img_path.append({'origin': os.path.join(root, line.split()[0]), 'attack': attack_img})
+                # attack_img = os.path.join(
+                #     root, line.split()[0][:-5] + '_attack.JPEG')
+
+                # if img does not exist, skip it
+                if not os.path.exists(attack_img):
+                    continue
+                self.img_path.append({'origin': os.path.join(
+                    root, line.split()[0]), 'attack': attack_img})
                 self.labels.append(int(line.split()[1]))
 
     def __len__(self):
@@ -64,10 +72,10 @@ def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=Tru
     print('Loading data from %s' % (txt))
 
     transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize(299),
+        transforms.CenterCrop(299),
         transforms.ToTensor(),
-        normalize,
+        # normalize,
     ])
 
     if split == 'train':
@@ -79,7 +87,8 @@ def load_data(split, apply_trans=True, batch_size=32, num_workers=4, shuffle=Tru
     else:
         raise ValueError('Unknown split: {}'.format(split))
 
-    dataset = ImageNetDataset(data_root, txt, transform if apply_trans else None)
+    dataset = ImageNetDataset(
+        data_root, txt, transform if apply_trans else None)
     print('Length of {} set is: {}'.format(split, len(dataset)))
 
     return DataLoader(dataset=dataset, batch_size=batch_size,

@@ -2,17 +2,18 @@ import torch
 from tqdm.notebook import tqdm
 import numpy as np
 import torchvision.models as models
+import torchvision.transforms as transforms
 import torch.nn.functional as F
 import torch.nn as nn
 import argparse
 import wandb
 import os
+import copy
 from attack import fgsm
 from data.DataLoader import load_data
-from utils import Avg_Metric
+from utils import Avg_Metric, Normalize
 from Denoising_autoencoder.model import Autoencoder
 from randomize import random_reshape
-from torch.nn.parallel import DistributedDataParallel as DDP
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -21,18 +22,35 @@ def test(args, denoiser, model):
     denoiser.eval()
     test_loader = load_data('test', batch_size=32, shuffle=False)
     test_accuracy = Avg_Metric()
+    adv_model = copy.deepcopy(model)
+    model.load_state_dict(torch.load('./checkpoints/fgsm_101_new.pth'))
     with torch.no_grad():
         for i, (data, labels, attack) in enumerate(tqdm(test_loader)):
-            attack = attack.to(device)
+            labels = labels.cuda()
+            data = data.cuda()
+            # Exclude wrongly classified examples
+            logits = model(data)
+            pred = torch.argmax(logits, dim=1)
+            idx = (pred == labels).nonzero(as_tuple=True)[0]
+            labels = labels[idx]
+            data = data[idx]
+            # attack = attack[idx].cuda()
+            with torch.enable_grad():
+                attack = fgsm(data, labels, adv_model,
+                              nn.CrossEntropyLoss(), epsilon=0.2)
+            if len(labels) == 0:
+                continue
             if args.mode == 'random':
                 anti_attack = random_reshape(attack)
             elif args.mode == 'denoise':
                 anti_attack = denoiser(attack)
+                mean, std = anti_attack.mean([2, 3]), anti_attack.std([2, 3])
+                anti_attack = (anti_attack - mean[:, :, None, None]) / std[:, :, None, None]
             elif args.mode == 'None':
-                anti_attack = attack
+                mean, std = attack.mean([2, 3]), attack.std([2, 3])
+                anti_attack = (attack - mean[:, :, None, None]) / std[:, :, None, None]
             else:
                 raise ValueError('mode error')
-            labels = labels.to(device)
             logits = model(anti_attack)
             # calculate accuracy
             pred = torch.argmax(logits, dim=1)
@@ -48,12 +66,13 @@ def train_val(args, denoiser, model):
         model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=3, gamma=0.7)
+    adv_model = copy.deepcopy(model)
+    adv_model = adv_model.cuda()
 
     train_loader = load_data('train', batch_size=args.batch_size, shuffle=True)
     val_loader = load_data('val', batch_size=args.batch_size, shuffle=False)
 
     denoiser.eval()
-    best_acc = 0
     for epoch in range(args.train_epoch):
         model.train()
         train_acc = Avg_Metric()
@@ -63,7 +82,9 @@ def train_val(args, denoiser, model):
             data = data.cuda()
             labels = labels.cuda()
             optimizer.zero_grad()
-            logits, _ = model(data)
+            mean, std = data.mean([2, 3]), data.std([2, 3])
+            normal_data = (data - mean[:, :, None, None]) / std[:, :, None, None]
+            logits = model(normal_data)
             # calculate accuracy
             pred = torch.argmax(logits, dim=1)
             acc = torch.sum(pred == labels).item()
@@ -76,8 +97,10 @@ def train_val(args, denoiser, model):
 
             # Adversarial training
             optimizer.zero_grad()
-            attack = attack.cuda()
-            logits, _ = model(attack)
+            attack = fgsm(data, labels, adv_model, criterion, epsilon=0.2)
+            mean, std = attack.mean([2, 3]), attack.std([2, 3])
+            attack = (attack - mean[:, :, None, None]) / std[:, :, None, None]
+            logits = model(attack)
             # calculate accuracy
             pred = torch.argmax(logits, dim=1)
             acc = torch.sum(pred == labels).item()
@@ -96,8 +119,13 @@ def train_val(args, denoiser, model):
         model.eval()
         with torch.no_grad():
             for i, (data, labels, attack) in enumerate(val_loader):
-                attack = attack.cuda()
+                data = data.cuda()
                 labels = labels.cuda()
+                with torch.enable_grad():
+                    attack = fgsm(data, labels, adv_model,
+                                  criterion, epsilon=0.2)
+                mean, std = attack.mean([2, 3]), attack.std([2, 3])
+                attack = (attack - mean[:, :, None, None]) / std[:, :, None, None]
                 logits = model(attack)
                 # calculate accuracy
                 probs = F.softmax(logits, dim=1)
@@ -110,7 +138,7 @@ def train_val(args, denoiser, model):
             wandb.log({'val_loss': val_loss.avg, 'val_acc': val_acc.avg *
                       100, 'step': (epoch + 1) * (i + 1)})
             torch.save(model.state_dict(),
-                       './checkpoints/epoch{}.pth'.format(epoch))
+                       './checkpoints/epoch{}_101.pth'.format(epoch))
 
 
 def main():
@@ -128,13 +156,13 @@ def main():
     torch.manual_seed(42)
     torch.backends.cudnn.benchmark = True
 
-    model_bank = {'InceptionV3': models.inception_v3(weights=models.Inception_V3_Weights.DEFAULT), 'ResNet101': models.resnet101(
+    model_bank = {'ResNet34': models.resnet34(weights=models.ResNet34_Weights.DEFAULT), 'ResNet101': models.resnet101(
         weights=models.ResNet101_Weights.DEFAULT), 'ResNet50': models.resnet50(weights=models.ResNet50_Weights.DEFAULT)}
     model = model_bank['ResNet101'].to(device)
-    # model.load_state_dict(torch.load('./checkpoints/resnet101.pth'))
 
     denoiser = Autoencoder().to(device)
-    denoiser.load_state_dict(torch.load('./Denoising_autoencoder/epoch25.pth'))
+    denoiser.load_state_dict(torch.load(
+        './Denoising_autoencoder/epoch35_denoise_34.pth'))
 
     test(args, denoiser, model)
 
